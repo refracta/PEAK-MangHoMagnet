@@ -1,0 +1,94 @@
+name: build
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build Thunderstore package
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet build -c Release -target:PackTS -v d
+
+      - name: Find package
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip_path="$(ls artifacts/thunderstore/*.zip | head -n1)"
+          if [[ -z "$zip_path" || ! -f "$zip_path" ]]; then
+            echo "Package zip not found under artifacts/thunderstore" >&2
+            exit 1
+          fi
+          echo "zip=$zip_path" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MangHoMagnet-thunderstore
+          path: ${{ steps.package.outputs.zip }}
+
+  release:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: MangHoMagnet-thunderstore
+          path: dist
+
+      - name: Create release (rolling)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          zip_path="$(find dist -maxdepth 3 -name '*.zip' -print -quit)"
+          if [[ -z "$zip_path" || ! -f "$zip_path" ]]; then
+            echo "Package zip not found under dist" >&2
+            exit 1
+          fi
+
+          bash scripts/release.sh upload \
+            -r "${{ github.repository }}" \
+            -n "MangHoMagnet" \
+            -T "MangHoMagnet (${GITHUB_SHA::7})" \
+            -b "${{ github.sha }}" \
+            -p "$zip_path"
+
+      - name: Keep last 3 releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          bash scripts/release.sh delete \
+            -r "${{ github.repository }}" \
+            -n "MangHoMagnet" \
+            -l 3

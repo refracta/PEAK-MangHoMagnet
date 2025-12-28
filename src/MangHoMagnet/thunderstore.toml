@@ -1,0 +1,104 @@
+[config]
+schemaVersion = "0.0.1"
+
+[general]
+repository = "https://thunderstore.io"
+
+[package]
+namespace = "refracta"
+name = "MangHoMagnet"
+description = "디시인사이드 피크 갤러리의 망호 글에서 Steam 로비 링크를 찾아 자동 입장하고, UI에서 목록을 확인할 수 있습니다."
+websiteUrl = ""
+containsNsfwContent = false
+
+[package.dependencies]
+BepInEx-BepInExPack_PEAK = "5.4.2403"
+
+[build]
+icon = "../../icon.png"
+readme = "../../README.md"
+outdir = "../../artifacts/thunderstore/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/com.github.manghomagnet.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/AngleSharp.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Buffers.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Collections.NonGeneric.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Collections.Specialized.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.ComponentModel.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.ComponentModel.Primitives.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.ComponentModel.TypeConverter.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.IO.FileSystem.Primitives.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Linq.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Memory.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Numerics.Vectors.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Reflection.TypeExtensions.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Runtime.CompilerServices.Unsafe.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Text.Encoding.CodePages.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Threading.dll"
+target = "plugins/"
+
+[[build.copy]]
+source = "../../CHANGELOG.md"
+target = "/"
+
+[[build.copy]]
+source = "../../LICENSE"
+target = "/"
+
+# The following config options only apply when using TCLI to publish to Thunderstore directly:
+
+[publish]
+# See communities at:
+# https://thunderstore.io/api/experimental/community/
+communities = [ "peak", ]
+
+[publish.categories]
+# See categories at:
+# https://thunderstore.io/api/experimental/community/peak/category/
+peak = [ "mods", ]

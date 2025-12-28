@@ -336,9 +336,14 @@ public partial class Plugin : BaseUnityPlugin
         // Info line removed; Join button now carries status/members text.
         GUILayout.EndVertical();
         GUILayout.Space(ActionGapWidth);
+        var buttonHeight = 24f;
         if (!string.IsNullOrWhiteSpace(entry.PostUrl))
         {
-            if (GUILayout.Button("Open Post", _buttonStyle ?? GUI.skin.button, GUILayout.Width(OpenPostWidth)))
+            if (GUILayout.Button(
+                "Open Post",
+                _buttonStyle ?? GUI.skin.button,
+                GUILayout.Width(OpenPostWidth),
+                GUILayout.Height(buttonHeight)))
             {
                 Application.OpenURL(entry.PostUrl);
             }
@@ -350,7 +355,7 @@ public partial class Plugin : BaseUnityPlugin
         GUILayout.Space(ActionButtonSpacing);
         var joinLabel = BuildJoinButtonLabel(entry);
         var joinStyle = GetJoinButtonStyle(entry);
-        if (GUILayout.Button(joinLabel, joinStyle, GUILayout.Width(JoinButtonWidth)))
+        if (GUILayout.Button(joinLabel, joinStyle, GUILayout.Width(JoinButtonWidth), GUILayout.Height(buttonHeight)))
         {
             TryJoinLobby(entry.Link, true);
         }
@@ -486,10 +491,7 @@ public partial class Plugin : BaseUnityPlugin
         _buttonStyle.onActive.textColor = buttonTextColor;
         _buttonStyle.onFocused.textColor = buttonTextColor;
 
-        _joinButtonStyle = new GUIStyle(GUI.skin.button);
-        _joinButtonStyle.fontSize = _buttonStyle.fontSize;
-        _joinButtonStyle.wordWrap = false;
-        _joinButtonStyle.clipping = TextClipping.Clip;
+        _joinButtonStyle = new GUIStyle(_buttonStyle);
         _joinButtonStyle.normal.textColor = Color.white;
         _joinButtonStyle.hover.textColor = Color.white;
         _joinButtonStyle.active.textColor = Color.white;
@@ -1967,6 +1969,13 @@ public partial class Plugin : BaseUnityPlugin
                         SortPostId = sortPostId
                     };
                 })
+                .GroupBy(
+                    item => string.IsNullOrWhiteSpace(item.Source?.Id) ? item.Entry.Link : item.Source.Id,
+                    StringComparer.OrdinalIgnoreCase)
+                .Select(group => group
+                    .OrderByDescending(item => GetStatusSortRank(item.Entry.Status))
+                    .ThenByDescending(item => item.Entry.LastSeenUtc)
+                    .First())
                 .OrderByDescending(item => item.SortPostId)
                 .ThenByDescending(item => item.Entry.LastSeenUtc)
                 .Select(item => new LobbyEntryView
@@ -1988,6 +1997,20 @@ public partial class Plugin : BaseUnityPlugin
 
             return snapshots;
         }
+    }
+
+    private static int GetStatusSortRank(LobbyCheckStatus status)
+    {
+        return status switch
+        {
+            LobbyCheckStatus.Valid => 5,
+            LobbyCheckStatus.Full => 4,
+            LobbyCheckStatus.Checking => 3,
+            LobbyCheckStatus.Unknown => 2,
+            LobbyCheckStatus.SteamUnavailable => 1,
+            LobbyCheckStatus.Invalid => 0,
+            _ => 0
+        };
     }
 
     private static long ParsePostId(string id)

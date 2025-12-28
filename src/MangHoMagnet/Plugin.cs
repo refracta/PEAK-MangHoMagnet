@@ -244,14 +244,17 @@ public partial class Plugin : BaseUnityPlugin
         const float colDateWidth = 200f;
         const float colViewsWidth = 70f;
         var colActionsWidth = OpenPostWidth + JoinButtonWidth + ActionGapWidth + ActionButtonSpacing;
-        var titleAvailable = contentWidth - (colIdWidth + colAuthorWidth + colDateWidth + colViewsWidth + colActionsWidth);
+        var maxTableContentWidth = colIdWidth + colAuthorWidth + colDateWidth + colViewsWidth + colActionsWidth + 520f;
+        var tableContentWidth = Mathf.Min(contentWidth, maxTableContentWidth);
+        var titleAvailable = tableContentWidth - (colIdWidth + colAuthorWidth + colDateWidth + colViewsWidth + colActionsWidth);
         var titleWidth = Mathf.Clamp(titleAvailable, 160f, 520f);
         if (titleWidth > titleAvailable)
         {
             titleWidth = Math.Max(80f, titleAvailable);
         }
 
-        GUILayout.BeginHorizontal(headerBox, GUILayout.Width(scrollViewContentWidth), GUILayout.ExpandWidth(false));
+        var headerBoxWidth = tableContentWidth + headerBox.padding.left + headerBox.padding.right;
+        GUILayout.BeginHorizontal(headerBox, GUILayout.Width(headerBoxWidth), GUILayout.ExpandWidth(false));
         GUILayout.Label("번호", _headerStyle, GUILayout.Width(colIdWidth));
         GUILayout.Label("제목", _headerStyle, GUILayout.Width(titleWidth));
         GUILayout.Label("글쓴이", _headerStyle, GUILayout.Width(colAuthorWidth));
@@ -268,7 +271,7 @@ public partial class Plugin : BaseUnityPlugin
             GUILayout.ExpandHeight(true),
             GUILayout.Width(scrollViewWidth),
             GUILayout.ExpandWidth(false));
-        GUILayout.BeginVertical(GUILayout.Width(scrollViewContentWidth), GUILayout.ExpandWidth(false));
+        GUILayout.BeginVertical(GUILayout.Width(tableContentWidth), GUILayout.ExpandWidth(false));
 
         if (_lobbySnapshot.Count == 0)
         {
@@ -278,7 +281,7 @@ public partial class Plugin : BaseUnityPlugin
         {
             foreach (var entry in _lobbySnapshot)
             {
-                DrawLobbyEntry(entry, colIdWidth, titleWidth, colAuthorWidth, colDateWidth, colViewsWidth, rowContentWidth, colActionsWidth);
+                DrawLobbyEntry(entry, colIdWidth, titleWidth, colAuthorWidth, colDateWidth, colViewsWidth, tableContentWidth, colActionsWidth);
             }
         }
 

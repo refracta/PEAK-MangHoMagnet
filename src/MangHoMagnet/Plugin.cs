@@ -709,7 +709,14 @@ public partial class Plugin : BaseUnityPlugin
         try
         {
             _harmony = new Harmony("com.github.manghomagnet");
-            var target = AccessTools.Method(typeof(SteamLobbyHandler), "OnLobbyDataUpdate");
+            var handlerType = AccessTools.TypeByName("SteamLobbyHandler");
+            if (handlerType == null)
+            {
+                Log.LogWarning("Failed to find SteamLobbyHandler type for popup suppression.");
+                return;
+            }
+
+            var target = AccessTools.Method(handlerType, "OnLobbyDataUpdate");
             if (target == null)
             {
                 Log.LogWarning("Failed to find SteamLobbyHandler.OnLobbyDataUpdate for popup suppression.");
@@ -725,7 +732,7 @@ public partial class Plugin : BaseUnityPlugin
         }
     }
 
-    private static void SteamLobbyHandler_OnLobbyDataUpdate_Prefix(SteamLobbyHandler __instance, ref LobbyDataUpdate_t param)
+    private static void SteamLobbyHandler_OnLobbyDataUpdate_Prefix(object __instance, ref LobbyDataUpdate_t param)
     {
         var plugin = Instance;
         if (plugin == null)
@@ -741,7 +748,7 @@ public partial class Plugin : BaseUnityPlugin
         param.m_bSuccess = 1;
     }
 
-    private bool ShouldSuppressLobbyPopup(SteamLobbyHandler handler, LobbyDataUpdate_t param)
+    private bool ShouldSuppressLobbyPopup(object handler, LobbyDataUpdate_t param)
     {
         if (!_suppressLobbyPopups.Value)
         {
@@ -758,11 +765,16 @@ public partial class Plugin : BaseUnityPlugin
             return false;
         }
 
+        if (handler == null)
+        {
+            return false;
+        }
+
         var gameRequestActive = TryIsGameLobbyRequestActive(handler, param);
         return gameRequestActive == false;
     }
 
-    private static bool? TryIsGameLobbyRequestActive(SteamLobbyHandler handler, LobbyDataUpdate_t param)
+    private static bool? TryIsGameLobbyRequestActive(object handler, LobbyDataUpdate_t param)
     {
         try
         {

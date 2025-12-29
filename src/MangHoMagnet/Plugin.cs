@@ -61,6 +61,8 @@ public partial class Plugin : BaseUnityPlugin
     private const float JoinButtonWidth = 260f;
     private const float ActionGapWidth = 10f;
     private const float ActionButtonSpacing = 6f;
+    private const float ActionButtonHeight = 24f;
+    private const float TableRightPadding = 12f;
 
     private HttpClient? _http;
     private Harmony? _harmony;
@@ -245,7 +247,8 @@ public partial class Plugin : BaseUnityPlugin
         const float colViewsWidth = 70f;
         var colActionsWidth = OpenPostWidth + JoinButtonWidth + ActionGapWidth + ActionButtonSpacing;
         var maxTableContentWidth = colIdWidth + colAuthorWidth + colDateWidth + colViewsWidth + colActionsWidth + 520f;
-        var tableContentWidth = Mathf.Min(contentWidth, maxTableContentWidth);
+        var tableContentWidth = Mathf.Min(contentWidth - TableRightPadding, maxTableContentWidth);
+        tableContentWidth = Mathf.Max(300f, tableContentWidth);
         var titleAvailable = tableContentWidth - (colIdWidth + colAuthorWidth + colDateWidth + colViewsWidth + colActionsWidth);
         var titleWidth = Mathf.Clamp(titleAvailable, 160f, 520f);
         if (titleWidth > titleAvailable)
@@ -336,7 +339,7 @@ public partial class Plugin : BaseUnityPlugin
         // Info line removed; Join button now carries status/members text.
         GUILayout.EndVertical();
         GUILayout.Space(ActionGapWidth);
-        var buttonHeight = 24f;
+        var buttonHeight = ActionButtonHeight;
         if (!string.IsNullOrWhiteSpace(entry.PostUrl))
         {
             if (GUILayout.Button(
@@ -482,6 +485,8 @@ public partial class Plugin : BaseUnityPlugin
         _buttonStyle.fontSize = Math.Max(_buttonStyle.fontSize, 15);
         _buttonStyle.wordWrap = false;
         _buttonStyle.clipping = TextClipping.Clip;
+        _buttonStyle.fixedHeight = ActionButtonHeight;
+        _buttonStyle.stretchHeight = false;
         _buttonStyle.normal.textColor = buttonTextColor;
         _buttonStyle.hover.textColor = buttonTextColor;
         _buttonStyle.active.textColor = buttonTextColor;
@@ -527,6 +532,24 @@ public partial class Plugin : BaseUnityPlugin
         _buttonStyle.margin = new RectOffset(0, 0, 0, 0);
         _joinButtonStyle.margin = new RectOffset(0, 0, 0, 0);
         _toggleStyle.margin = new RectOffset(0, 0, 0, 0);
+        if (_joinButtonValidStyle != null)
+        {
+            _joinButtonValidStyle.margin = _joinButtonStyle.margin;
+            _joinButtonValidStyle.fixedHeight = _joinButtonStyle.fixedHeight;
+            _joinButtonValidStyle.stretchHeight = _joinButtonStyle.stretchHeight;
+        }
+        if (_joinButtonFullStyle != null)
+        {
+            _joinButtonFullStyle.margin = _joinButtonStyle.margin;
+            _joinButtonFullStyle.fixedHeight = _joinButtonStyle.fixedHeight;
+            _joinButtonFullStyle.stretchHeight = _joinButtonStyle.stretchHeight;
+        }
+        if (_joinButtonInvalidStyle != null)
+        {
+            _joinButtonInvalidStyle.margin = _joinButtonStyle.margin;
+            _joinButtonInvalidStyle.fixedHeight = _joinButtonStyle.fixedHeight;
+            _joinButtonInvalidStyle.stretchHeight = _joinButtonStyle.stretchHeight;
+        }
     }
 
     private void BindConfig()

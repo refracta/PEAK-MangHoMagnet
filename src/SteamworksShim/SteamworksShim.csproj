@@ -4,5 +4,7 @@
     <AssemblyName>com.rlabrecque.steamworks.net</AssemblyName>
     <RootNamespace>Steamworks</RootNamespace>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <ThunderstorePackable>false</ThunderstorePackable>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 </Project>

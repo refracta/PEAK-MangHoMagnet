@@ -8,7 +8,7 @@ repository = "https://thunderstore.io"
 namespace = "refracta"
 name = "MangHoMagnet"
 description = "Scans DCInside's PEAK gallery posts for Steam lobby links and lets you view/join them in-game."
-websiteUrl = ""
+websiteUrl = "https://github.com/refracta/PEAK-MangHoMagnet"
 containsNsfwContent = false
 
 [package.dependencies]

@@ -107,9 +107,11 @@ jobs:
             -l 3
 
   publish:
-    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && secrets.THUNDERSTORE_TOKEN != '' }}
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-latest
     needs: build
+    env:
+      TCLI_AUTH_TOKEN: ${{ secrets.THUNDERSTORE_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -120,9 +122,8 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Publish to Thunderstore
+        if: ${{ env.TCLI_AUTH_TOKEN != '' }}
         shell: bash
-        env:
-          TCLI_AUTH_TOKEN: ${{ secrets.THUNDERSTORE_TOKEN }}
         run: |
           set -euo pipefail
           dotnet build -c Release -target:PackTS -p:PublishTS=true -p:Version=${{ needs.build.outputs.package_version }} -v m

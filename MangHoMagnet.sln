@@ -7,23 +7,30 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{1175ABFE-F47
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MangHoMagnet", "src\MangHoMagnet\MangHoMagnet.csproj", "{FF93559A-B101-4168-8182-F5044E219729}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SteamworksShim", "src\SteamworksShim\SteamworksShim.csproj", "{A49F9F01-F733-4CA4-BAD1-CA802F67F1A5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
-	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{FF93559A-B101-4168-8182-F5044E219729}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{FF93559A-B101-4168-8182-F5044E219729}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{FF93559A-B101-4168-8182-F5044E219729}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{FF93559A-B101-4168-8182-F5044E219729}.Release|Any CPU.Build.0 = Release|Any CPU
-	EndGlobalSection
+        GlobalSection(ProjectConfigurationPlatforms) = postSolution
+                {FF93559A-B101-4168-8182-F5044E219729}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+                {FF93559A-B101-4168-8182-F5044E219729}.Debug|Any CPU.Build.0 = Debug|Any CPU
+                {FF93559A-B101-4168-8182-F5044E219729}.Release|Any CPU.ActiveCfg = Release|Any CPU
+                {FF93559A-B101-4168-8182-F5044E219729}.Release|Any CPU.Build.0 = Release|Any CPU
+                {A49F9F01-F733-4CA4-BAD1-CA802F67F1A5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+                {A49F9F01-F733-4CA4-BAD1-CA802F67F1A5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+                {A49F9F01-F733-4CA4-BAD1-CA802F67F1A5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+                {A49F9F01-F733-4CA4-BAD1-CA802F67F1A5}.Release|Any CPU.Build.0 = Release|Any CPU
+        EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
-	GlobalSection(NestedProjects) = preSolution
-		{FF93559A-B101-4168-8182-F5044E219729} = {1175ABFE-F478-453A-8D69-503BCF74D775}
-	EndGlobalSection
+        GlobalSection(NestedProjects) = preSolution
+                {FF93559A-B101-4168-8182-F5044E219729} = {1175ABFE-F478-453A-8D69-503BCF74D775}
+                {A49F9F01-F733-4CA4-BAD1-CA802F67F1A5} = {1175ABFE-F478-453A-8D69-503BCF74D775}
+        EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {92F6D475-68F0-44D6-A1AF-A28F5948E381}
 	EndGlobalSection

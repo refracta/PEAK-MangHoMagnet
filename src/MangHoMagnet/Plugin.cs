@@ -1543,6 +1543,12 @@ public partial class Plugin : BaseUnityPlugin
 
         if (!string.Equals(previous.Views, current.Views, StringComparison.Ordinal))
         {
+            if (TryParseViewCount(previous.Views, out var previousViews) &&
+                TryParseViewCount(current.Views, out var currentViews))
+            {
+                return currentViews - previousViews >= 2;
+            }
+
             return true;
         }
 
@@ -2077,6 +2083,23 @@ public partial class Plugin : BaseUnityPlugin
         }
 
         return 0;
+    }
+
+    private static bool TryParseViewCount(string value, out int count)
+    {
+        count = 0;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var digits = new string(value.Where(char.IsDigit).ToArray());
+        if (digits.Length == 0)
+        {
+            return false;
+        }
+
+        return int.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out count);
     }
 
     private void TryJoinLobby(string link, bool force)

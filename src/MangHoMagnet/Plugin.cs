@@ -755,7 +755,7 @@ public partial class Plugin : BaseUnityPlugin
 
         try
         {
-            _lobbyDataCallback = Callback<LobbyDataUpdate_t>.Create(OnLobbyDataUpdated);
+            _lobbyDataCallback = Callback<LobbyDataUpdate_t>.Create(new Callback<LobbyDataUpdate_t>.DispatchDelegate(OnLobbyDataUpdated));
             _steamValidationEnabled = true;
         }
         catch (Exception ex)

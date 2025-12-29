@@ -21,7 +21,9 @@ namespace Steamworks
 
     public sealed class Callback<T>
     {
-        public static Callback<T> Create(Action<T> action)
+        public delegate void DispatchDelegate(T param);
+
+        public static Callback<T> Create(DispatchDelegate action)
         {
             return new Callback<T>();
         }

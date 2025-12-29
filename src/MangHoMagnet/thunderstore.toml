@@ -21,67 +21,11 @@ outdir = "../../artifacts/thunderstore/"
 
 [[build.copy]]
 source = "../../artifacts/bin/MangHoMagnet/release/com.github.manghomagnet.dll"
-target = "plugins/"
+target = "/"
 
 [[build.copy]]
 source = "../../artifacts/bin/MangHoMagnet/release/AngleSharp.dll"
-target = "plugins/"
-
-[[build.copy]]
-source = "../../artifacts/bin/MangHoMagnet/release/System.Buffers.dll"
-target = "plugins/"
-
-[[build.copy]]
-source = "../../artifacts/bin/MangHoMagnet/release/System.Collections.NonGeneric.dll"
-target = "plugins/"
-
-[[build.copy]]
-source = "../../artifacts/bin/MangHoMagnet/release/System.Collections.Specialized.dll"
-target = "plugins/"
-
-[[build.copy]]
-source = "../../artifacts/bin/MangHoMagnet/release/System.ComponentModel.dll"
-target = "plugins/"
-
-[[build.copy]]
-source = "../../artifacts/bin/MangHoMagnet/release/System.ComponentModel.Primitives.dll"
-target = "plugins/"
-
-[[build.copy]]
-source = "../../artifacts/bin/MangHoMagnet/release/System.ComponentModel.TypeConverter.dll"
-target = "plugins/"
-
-[[build.copy]]
-source = "../../artifacts/bin/MangHoMagnet/release/System.IO.FileSystem.Primitives.dll"
-target = "plugins/"
-
-[[build.copy]]
-source = "../../artifacts/bin/MangHoMagnet/release/System.Linq.dll"
-target = "plugins/"
-
-[[build.copy]]
-source = "../../artifacts/bin/MangHoMagnet/release/System.Memory.dll"
-target = "plugins/"
-
-[[build.copy]]
-source = "../../artifacts/bin/MangHoMagnet/release/System.Numerics.Vectors.dll"
-target = "plugins/"
-
-[[build.copy]]
-source = "../../artifacts/bin/MangHoMagnet/release/System.Reflection.TypeExtensions.dll"
-target = "plugins/"
-
-[[build.copy]]
-source = "../../artifacts/bin/MangHoMagnet/release/System.Runtime.CompilerServices.Unsafe.dll"
-target = "plugins/"
-
-[[build.copy]]
-source = "../../artifacts/bin/MangHoMagnet/release/System.Text.Encoding.CodePages.dll"
-target = "plugins/"
-
-[[build.copy]]
-source = "../../artifacts/bin/MangHoMagnet/release/System.Threading.dll"
-target = "plugins/"
+target = "/"
 
 [[build.copy]]
 source = "../../CHANGELOG.md"

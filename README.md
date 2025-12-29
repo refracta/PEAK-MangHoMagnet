@@ -15,6 +15,8 @@ Scans the DCInside PEAK gallery for `steam://joinlobby/...` links and lets you j
 - Columns: Number / Title / Author / Exact time / Views + Steam link
 - Buttons: `Open Post` and `Join` (status text)
 
+![Example UI](https://github.com/user-attachments/assets/431ad94a-dbcc-4efa-aa0f-4255365e729d)
+
 ## Settings
 BepInEx config: `BepInEx/config/com.github.manghomagnet.cfg`
 

@@ -5,7 +5,7 @@ schemaVersion = "0.0.1"
 repository = "https://thunderstore.io"
 
 [package]
-namespace = "refracta"
+namespace = "MangHoMagnet"
 name = "MangHoMagnet"
 description = "디시인사이드 피크 갤러리의 망호 글에서 Steam 로비 링크를 찾아 자동 입장하고, UI에서 목록을 확인할 수 있습니다."
 websiteUrl = ""

@@ -28,6 +28,26 @@ source = "../../artifacts/bin/MangHoMagnet/release/AngleSharp.dll"
 target = "/"
 
 [[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Buffers.dll"
+target = "/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Memory.dll"
+target = "/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Numerics.Vectors.dll"
+target = "/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Runtime.CompilerServices.Unsafe.dll"
+target = "/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Text.Encoding.CodePages.dll"
+target = "/"
+
+[[build.copy]]
 source = "../../CHANGELOG.md"
 target = "/"
 

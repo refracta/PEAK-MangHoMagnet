@@ -11,6 +11,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -133,6 +134,13 @@ public partial class Plugin : BaseUnityPlugin
     {
         Log = Logger;
         Instance = this;
+        try
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        }
+        catch
+        {
+        }
         BindConfig();
         ApplyHarmonyPatches();
         TryInitializeSteamValidation();

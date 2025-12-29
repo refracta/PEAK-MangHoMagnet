@@ -32,6 +32,34 @@ source = "../../artifacts/bin/MangHoMagnet/release/System.Buffers.dll"
 target = "/"
 
 [[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Collections.NonGeneric.dll"
+target = "/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Collections.Specialized.dll"
+target = "/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.ComponentModel.dll"
+target = "/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.ComponentModel.Primitives.dll"
+target = "/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.ComponentModel.TypeConverter.dll"
+target = "/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.IO.FileSystem.Primitives.dll"
+target = "/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Linq.dll"
+target = "/"
+
+[[build.copy]]
 source = "../../artifacts/bin/MangHoMagnet/release/System.Memory.dll"
 target = "/"
 
@@ -40,11 +68,19 @@ source = "../../artifacts/bin/MangHoMagnet/release/System.Numerics.Vectors.dll"
 target = "/"
 
 [[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Reflection.TypeExtensions.dll"
+target = "/"
+
+[[build.copy]]
 source = "../../artifacts/bin/MangHoMagnet/release/System.Runtime.CompilerServices.Unsafe.dll"
 target = "/"
 
 [[build.copy]]
 source = "../../artifacts/bin/MangHoMagnet/release/System.Text.Encoding.CodePages.dll"
+target = "/"
+
+[[build.copy]]
+source = "../../artifacts/bin/MangHoMagnet/release/System.Threading.dll"
 target = "/"
 
 [[build.copy]]

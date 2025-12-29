@@ -57,6 +57,12 @@ public partial class Plugin : BaseUnityPlugin
     private readonly object _pendingLobbyLock = new object();
 
     private const int MaxLobbyChecksPerFrame = 4;
+    private const float ColIdWidth = 80f;
+    private const float ColAuthorWidth = 170f;
+    private const float ColDateWidth = 200f;
+    private const float ColViewsWidth = 70f;
+    private const float MaxTitleWidth = 520f;
+    private const float MinTitleWidth = 160f;
     private const float OpenPostWidth = 110f;
     private const float JoinButtonWidth = 260f;
     private const float ActionGapWidth = 10f;
@@ -179,6 +185,12 @@ public partial class Plugin : BaseUnityPlugin
 
         EnsureGuiStyles();
 
+        var maxWindowWidth = GetMaxWindowWidth();
+        if (_uiWidth.Value > maxWindowWidth)
+        {
+            _uiWidth.Value = Mathf.RoundToInt(maxWindowWidth);
+        }
+
         if (_windowRect.width != _uiWidth.Value || _windowRect.height != _uiHeight.Value)
         {
             _windowRect.width = _uiWidth.Value;
@@ -241,16 +253,16 @@ public partial class Plugin : BaseUnityPlugin
         var headerContentWidth = GetContentWidthForStyle(scrollViewContentWidth, headerBox);
         var rowContentWidth = GetContentWidthForStyle(scrollViewContentWidth, rowBox);
         var contentWidth = Mathf.Min(headerContentWidth, rowContentWidth);
-        const float colIdWidth = 80f;
-        const float colAuthorWidth = 170f;
-        const float colDateWidth = 200f;
-        const float colViewsWidth = 70f;
+        var colIdWidth = ColIdWidth;
+        var colAuthorWidth = ColAuthorWidth;
+        var colDateWidth = ColDateWidth;
+        var colViewsWidth = ColViewsWidth;
         var colActionsWidth = OpenPostWidth + JoinButtonWidth + ActionGapWidth + ActionButtonSpacing;
-        var maxTableContentWidth = colIdWidth + colAuthorWidth + colDateWidth + colViewsWidth + colActionsWidth + 520f;
+        var maxTableContentWidth = colIdWidth + colAuthorWidth + colDateWidth + colViewsWidth + colActionsWidth + MaxTitleWidth;
         var tableContentWidth = Mathf.Min(contentWidth - TableRightPadding, maxTableContentWidth);
         tableContentWidth = Mathf.Max(300f, tableContentWidth);
         var titleAvailable = tableContentWidth - (colIdWidth + colAuthorWidth + colDateWidth + colViewsWidth + colActionsWidth);
-        var titleWidth = Mathf.Clamp(titleAvailable, 160f, 520f);
+        var titleWidth = Mathf.Clamp(titleAvailable, MinTitleWidth, MaxTitleWidth);
         if (titleWidth > titleAvailable)
         {
             titleWidth = Math.Max(80f, titleAvailable);
@@ -674,6 +686,27 @@ public partial class Plugin : BaseUnityPlugin
         var windowPadding = _windowStyle?.padding ?? GUI.skin.window.padding;
         var padding = windowPadding.left + windowPadding.right;
         return Mathf.Max(_windowRect.width - padding - 8f, 720f);
+    }
+
+    private float GetMaxWindowWidth()
+    {
+        var scrollbarWidth = GUI.skin.verticalScrollbar?.fixedWidth ?? 0f;
+        if (scrollbarWidth <= 0f)
+        {
+            scrollbarWidth = 16f;
+        }
+
+        var windowPadding = _windowStyle?.padding ?? GUI.skin.window.padding;
+        var padding = windowPadding.left + windowPadding.right;
+        var maxTableContentWidth = ColIdWidth
+            + ColAuthorWidth
+            + ColDateWidth
+            + ColViewsWidth
+            + (OpenPostWidth + JoinButtonWidth + ActionGapWidth + ActionButtonSpacing)
+            + MaxTitleWidth;
+        var minWindowWidth = 720f + padding + 8f;
+        var desiredWidth = maxTableContentWidth + TableRightPadding + scrollbarWidth + padding + 8f;
+        return Mathf.Max(minWindowWidth, desiredWidth);
     }
 
     private float GetScrollViewContentWidth(float viewWidth)

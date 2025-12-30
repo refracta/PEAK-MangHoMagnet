@@ -123,7 +123,10 @@ public partial class Plugin : BaseUnityPlugin
     private float _nextPopupScanTime;
     private bool _autoPollingPaused;
     private bool _isInGame;
-    private Type[]? _inGameTypes;
+    private Type? _cachedConnectionServiceType;
+    private MethodInfo? _cachedGetServiceMethod;
+    private Type? _cachedInRoomStateType;
+    private Type? _cachedHostStateType;
 
     private GUIStyle? _headerStyle;
     private GUIStyle? _cellStyle;
@@ -198,42 +201,7 @@ public partial class Plugin : BaseUnityPlugin
 
         _lastInGameCheckUtc = now;
 
-        if (_inGameTypes == null)
-        {
-            _inGameTypes = new[]
-            {
-                AccessTools.TypeByName("GameHandler"),
-                AccessTools.TypeByName("GameHandlerMP"),
-                AccessTools.TypeByName("GameHandlerSP"),
-                AccessTools.TypeByName("GameHandlerMultiplayer"),
-                AccessTools.TypeByName("GameManager"),
-                AccessTools.TypeByName("PlayerController")
-            };
-        }
-
-        var inGame = false;
-        if (_inGameTypes.Length > 0)
-        {
-            foreach (var type in _inGameTypes)
-            {
-                if (type == null)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    if (UnityEngine.Object.FindObjectOfType(type) != null)
-                    {
-                        inGame = true;
-                        break;
-                    }
-                }
-                catch
-                {
-                }
-            }
-        }
+        var inGame = IsInGame();
 
         var wasPaused = _autoPollingPaused;
         _isInGame = inGame;
@@ -241,6 +209,134 @@ public partial class Plugin : BaseUnityPlugin
         if (wasPaused && !_autoPollingPaused)
         {
             SetNextPollUtc();
+        }
+    }
+
+    private bool IsInGame()
+    {
+        if (TryGetPhotonInRoom(out var inRoom))
+        {
+            return inRoom;
+        }
+
+        if (TryGetConnectionState(out var currentStateType))
+        {
+            _cachedInRoomStateType ??= AccessTools.TypeByName("InRoomState");
+            _cachedHostStateType ??= AccessTools.TypeByName("HostState");
+
+            if (_cachedInRoomStateType != null && currentStateType == _cachedInRoomStateType)
+            {
+                return true;
+            }
+
+            if (_cachedHostStateType != null && currentStateType == _cachedHostStateType)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryGetPhotonInRoom(out bool inRoom)
+    {
+        inRoom = false;
+        var photonType = AccessTools.TypeByName("Photon.Pun.PhotonNetwork");
+        if (photonType == null)
+        {
+            return false;
+        }
+
+        var inRoomProp = photonType.GetProperty("InRoom", BindingFlags.Public | BindingFlags.Static);
+        if (inRoomProp == null)
+        {
+            return false;
+        }
+
+        if (inRoomProp.GetValue(null) is bool value)
+        {
+            inRoom = value;
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool TryGetConnectionState(out Type? currentStateType)
+    {
+        currentStateType = null;
+        var gameHandlerType = AccessTools.TypeByName("GameHandler");
+        if (gameHandlerType == null)
+        {
+            return false;
+        }
+
+        _cachedConnectionServiceType ??= AccessTools.TypeByName("ConnectionService");
+        if (_cachedConnectionServiceType == null)
+        {
+            return false;
+        }
+
+        _cachedGetServiceMethod ??= gameHandlerType
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .FirstOrDefault(method => method.Name == "GetService" && method.IsGenericMethodDefinition);
+        if (_cachedGetServiceMethod == null)
+        {
+            return false;
+        }
+
+        object? connectionService = null;
+        try
+        {
+            var getService = _cachedGetServiceMethod.MakeGenericMethod(_cachedConnectionServiceType);
+            connectionService = getService.Invoke(null, null);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (connectionService == null)
+        {
+            return false;
+        }
+
+        object? stateMachine = null;
+        try
+        {
+            var stateMachineField = _cachedConnectionServiceType.GetField("StateMachine", BindingFlags.Public | BindingFlags.Instance);
+            stateMachine = stateMachineField?.GetValue(connectionService);
+            if (stateMachine == null)
+            {
+                var stateMachineProp = _cachedConnectionServiceType.GetProperty("StateMachine", BindingFlags.Public | BindingFlags.Instance);
+                stateMachine = stateMachineProp?.GetValue(connectionService);
+            }
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (stateMachine == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var currentStateProp = stateMachine.GetType().GetProperty("CurrentState", BindingFlags.Public | BindingFlags.Instance);
+            var currentState = currentStateProp?.GetValue(stateMachine);
+            if (currentState == null)
+            {
+                return false;
+            }
+
+            currentStateType = currentState.GetType();
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 

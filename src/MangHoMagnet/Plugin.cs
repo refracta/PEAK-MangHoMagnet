@@ -55,9 +55,14 @@ public partial class Plugin : BaseUnityPlugin
     private readonly SemaphoreSlim _pollGate = new SemaphoreSlim(1, 1);
     private readonly Queue<ulong> _pendingLobbyChecks = new Queue<ulong>();
     private readonly Dictionary<string, PostInfo> _postInfoByUrl = new Dictionary<string, PostInfo>(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTime> _postLastFetchUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
     private readonly object _pendingLobbyLock = new object();
 
-    private const int MaxLobbyChecksPerFrame = 4;
+    private const int MaxLobbyChecksPerFrame = 2;
+    private const float LobbyCheckTimeoutSeconds = 2f;
+    private const float LobbyCheckIntervalSeconds = 0.25f;
+    private const float PopupScanIntervalSeconds = 1.0f;
+    private const float InGameCheckIntervalSeconds = 1.0f;
     private const float ColIdWidth = 80f;
     private const float ColAuthorWidth = 170f;
     private const float ColDateWidth = 200f;
@@ -81,9 +86,11 @@ public partial class Plugin : BaseUnityPlugin
     private ConfigEntry<bool> _enabled = null!;
     private ConfigEntry<string> _galleryListUrl = null!;
     private ConfigEntry<string> _subjectKeyword = null!;
+    private ConfigEntry<bool> _pauseAutoPollInGame = null!;
     private ConfigEntry<bool> _autoJoin = null!;
     private ConfigEntry<int> _pollIntervalSeconds = null!;
     private ConfigEntry<int> _maxPostsPerPoll = null!;
+    private ConfigEntry<int> _postRefetchCooldownSeconds = null!;
     private ConfigEntry<int> _joinCooldownSeconds = null!;
     private ConfigEntry<int> _maxLobbyEntries = null!;
     private ConfigEntry<bool> _validateLobbies = null!;
@@ -111,6 +118,12 @@ public partial class Plugin : BaseUnityPlugin
     private bool _loggedListEmpty;
     private bool _loggedNoLinks;
     private DateTime _lastModalCheckUtc = DateTime.MinValue;
+    private DateTime _lastInGameCheckUtc = DateTime.MinValue;
+    private float _nextLobbyCheckTime;
+    private float _nextPopupScanTime;
+    private bool _autoPollingPaused;
+    private bool _isInGame;
+    private Type[]? _inGameTypes;
 
     private GUIStyle? _headerStyle;
     private GUIStyle? _cellStyle;
@@ -126,6 +139,7 @@ public partial class Plugin : BaseUnityPlugin
     private GUIStyle? _joinButtonValidStyle;
     private GUIStyle? _joinButtonFullStyle;
     private GUIStyle? _joinButtonInvalidStyle;
+    private GUIStyle? _joinButtonTimeoutStyle;
     private GUIStyle? _toggleStyle;
     private Texture2D? _windowBackgroundTex;
     private Texture2D? _headerBackgroundTex;
@@ -162,12 +176,82 @@ public partial class Plugin : BaseUnityPlugin
         _harmony?.UnpatchSelf();
     }
 
+    private void UpdateInGameState()
+    {
+        if (!_pauseAutoPollInGame.Value || !_enabled.Value)
+        {
+            if (_autoPollingPaused)
+            {
+                _autoPollingPaused = false;
+                _isInGame = false;
+                SetNextPollUtc();
+            }
+
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        if ((now - _lastInGameCheckUtc).TotalSeconds < InGameCheckIntervalSeconds)
+        {
+            return;
+        }
+
+        _lastInGameCheckUtc = now;
+
+        if (_inGameTypes == null)
+        {
+            _inGameTypes = new[]
+            {
+                AccessTools.TypeByName("GameHandler"),
+                AccessTools.TypeByName("GameHandlerMP"),
+                AccessTools.TypeByName("GameHandlerSP"),
+                AccessTools.TypeByName("GameHandlerMultiplayer"),
+                AccessTools.TypeByName("GameManager"),
+                AccessTools.TypeByName("PlayerController")
+            };
+        }
+
+        var inGame = false;
+        if (_inGameTypes.Length > 0)
+        {
+            foreach (var type in _inGameTypes)
+            {
+                if (type == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (UnityEngine.Object.FindObjectOfType(type) != null)
+                    {
+                        inGame = true;
+                        break;
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        var wasPaused = _autoPollingPaused;
+        _isInGame = inGame;
+        _autoPollingPaused = _pauseAutoPollInGame.Value && _enabled.Value && _isInGame;
+        if (wasPaused && !_autoPollingPaused)
+        {
+            SetNextPollUtc();
+        }
+    }
+
     private void Update()
     {
         if (_toggleKey.Value.IsDown())
         {
             ToggleUi();
         }
+
+        UpdateInGameState();
 
         if (_steamValidationEnabled)
         {
@@ -179,8 +263,19 @@ public partial class Plugin : BaseUnityPlugin
             {
             }
 
-            ProcessLobbyChecks();
-            TryDismissLobbyPopups();
+            var now = Time.unscaledTime;
+            if (now >= _nextLobbyCheckTime)
+            {
+                _nextLobbyCheckTime = now + LobbyCheckIntervalSeconds;
+                ProcessLobbyChecks();
+                UpdateCheckTimeouts();
+            }
+
+            if (now >= _nextPopupScanTime)
+            {
+                _nextPopupScanTime = now + PopupScanIntervalSeconds;
+                TryDismissLobbyPopups();
+            }
         }
     }
 
@@ -248,11 +343,17 @@ public partial class Plugin : BaseUnityPlugin
         GUILayout.Label($"Last poll: {(_lastPollUtc == DateTime.MinValue ? "-" : _lastPollUtc.ToLocalTime().ToString("HH:mm:ss"))}", menuStyle);
         GUILayout.Space(16f);
         var remainingSeconds = GetRemainingSeconds();
-        var countdownText = _enabled.Value
-            ? $"Next refresh: {remainingSeconds}s"
-            : "Next refresh: paused";
+        var countdownText = !_enabled.Value
+            ? "Next refresh: paused"
+            : _autoPollingPaused
+                ? "Next refresh: paused (in game)"
+                : $"Next refresh: {remainingSeconds}s";
         GUILayout.Label(countdownText, menuStyle);
         GUILayout.EndHorizontal();
+        if (_autoPollingPaused)
+        {
+            GUILayout.Label("Auto scan paused while in game", menuStyle);
+        }
 
         var scrollViewWidth = GetScrollViewWidth();
         var scrollViewContentWidth = GetScrollViewContentWidth(scrollViewWidth);
@@ -406,6 +507,7 @@ public partial class Plugin : BaseUnityPlugin
             LobbyCheckStatus.Full => new Color(1.0f, 0.95f, 0.80f),
             LobbyCheckStatus.Invalid => new Color(1.0f, 0.86f, 0.86f),
             LobbyCheckStatus.Checking => new Color(0.86f, 0.93f, 1.0f),
+            LobbyCheckStatus.Timeout => new Color(0.93f, 0.93f, 0.96f),
             LobbyCheckStatus.SteamUnavailable => new Color(0.94f, 0.94f, 0.95f),
             _ => GUI.backgroundColor
         };
@@ -529,6 +631,7 @@ public partial class Plugin : BaseUnityPlugin
         _joinButtonValidStyle = CreateJoinStateStyle(_joinButtonStyle, new Color(0.10f, 0.55f, 0.24f));
         _joinButtonFullStyle = CreateJoinStateStyle(_joinButtonStyle, new Color(0.78f, 0.42f, 0.05f));
         _joinButtonInvalidStyle = CreateJoinStateStyle(_joinButtonStyle, new Color(0.80f, 0.12f, 0.12f));
+        _joinButtonTimeoutStyle = CreateJoinStateStyle(_joinButtonStyle, new Color(0.45f, 0.45f, 0.50f));
 
         _toggleStyle = new GUIStyle(GUI.skin.toggle);
         _toggleStyle.fontSize = Math.Max(_toggleStyle.fontSize, 15);
@@ -570,6 +673,12 @@ public partial class Plugin : BaseUnityPlugin
             _joinButtonInvalidStyle.fixedHeight = _joinButtonStyle.fixedHeight;
             _joinButtonInvalidStyle.stretchHeight = _joinButtonStyle.stretchHeight;
         }
+        if (_joinButtonTimeoutStyle != null)
+        {
+            _joinButtonTimeoutStyle.margin = _joinButtonStyle.margin;
+            _joinButtonTimeoutStyle.fixedHeight = _joinButtonStyle.fixedHeight;
+            _joinButtonTimeoutStyle.stretchHeight = _joinButtonStyle.stretchHeight;
+        }
     }
 
     private void BindConfig()
@@ -590,11 +699,21 @@ public partial class Plugin : BaseUnityPlugin
             "PollIntervalSeconds",
             10,
             "Seconds between list scans.");
+        _pauseAutoPollInGame = Config.Bind(
+            "General",
+            "PauseAutoPollInGame",
+            true,
+            "Pause automatic polling while in game (manual refresh still works).");
         _maxPostsPerPoll = Config.Bind(
             "General",
             "MaxPostsPerPoll",
             50,
             "Maximum number of posts to scan per poll (minimum 50 to cover the first page).");
+        _postRefetchCooldownSeconds = Config.Bind(
+            "General",
+            "PostRefetchCooldownSeconds",
+            60,
+            "Minimum seconds between re-fetching the same post when metadata changes.");
         _maxLobbyEntries = Config.Bind(
             "General",
             "MaxLobbyEntries",
@@ -670,6 +789,11 @@ public partial class Plugin : BaseUnityPlugin
     private int GetRemainingSeconds()
     {
         if (_nextPollUtc == DateTime.MinValue)
+        {
+            return 0;
+        }
+
+        if (_autoPollingPaused || !_enabled.Value)
         {
             return 0;
         }
@@ -909,6 +1033,11 @@ public partial class Plugin : BaseUnityPlugin
             return;
         }
 
+        if (!HasActiveLobbyChecks())
+        {
+            return;
+        }
+
         var now = DateTime.UtcNow;
         if ((now - _lastModalCheckUtc).TotalSeconds < 0.5)
         {
@@ -924,6 +1053,14 @@ public partial class Plugin : BaseUnityPlugin
         if (dismissed)
         {
             Log.LogDebug("Suppressed a lobby error modal.");
+        }
+    }
+
+    private bool HasActiveLobbyChecks()
+    {
+        lock (_lobbyLock)
+        {
+            return _lobbyEntries.Any(entry => entry.IsCheckPending);
         }
     }
 
@@ -1137,7 +1274,10 @@ public partial class Plugin : BaseUnityPlugin
             {
                 if (_enabled.Value)
                 {
-                    await PollOnceAsync(token);
+                    if (!_autoPollingPaused)
+                    {
+                        await PollOnceAsync(token);
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -1234,6 +1374,11 @@ public partial class Plugin : BaseUnityPlugin
                     continue;
                 }
 
+                if (!isNewPost && ShouldThrottlePostFetch(postInfo.Url))
+                {
+                    continue;
+                }
+
                 var postHtml = await FetchStringAsync(postInfo.Url, token, "post");
                 if (string.IsNullOrWhiteSpace(postHtml))
                 {
@@ -1246,6 +1391,8 @@ public partial class Plugin : BaseUnityPlugin
                 var effectivePostInfo = string.IsNullOrWhiteSpace(fullPostDate)
                     ? postInfo
                     : postInfo.WithDate(fullPostDate);
+
+                TrackPostFetch(postInfo.Url);
 
                 foreach (var link in ExtractSteamLinks(postHtml))
                 {
@@ -1279,6 +1426,40 @@ public partial class Plugin : BaseUnityPlugin
             SetNextPollUtc();
             _pollGate.Release();
         }
+    }
+
+    private bool ShouldThrottlePostFetch(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return false;
+        }
+
+        var cooldownSeconds = Math.Max(_postRefetchCooldownSeconds.Value, 0);
+        if (cooldownSeconds <= 0)
+        {
+            return false;
+        }
+
+        if (_postLastFetchUtc.TryGetValue(url, out var lastFetch))
+        {
+            if (DateTime.UtcNow - lastFetch < TimeSpan.FromSeconds(cooldownSeconds))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void TrackPostFetch(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+
+        _postLastFetchUtc[url] = DateTime.UtcNow;
     }
 
     private List<PostInfo> ExtractPostInfos(
@@ -1681,6 +1862,7 @@ public partial class Plugin : BaseUnityPlugin
         return entry.Status switch
         {
             LobbyCheckStatus.Invalid => "Join (Invalid)",
+            LobbyCheckStatus.Timeout => "Join (Timeout)",
             LobbyCheckStatus.Full => hasMembers ? $"Join (Full | Members {entry.MemberCount}/{entry.MemberLimit})" : "Join (Full)",
             LobbyCheckStatus.Valid => hasMembers ? $"Join (Members {entry.MemberCount}/{entry.MemberLimit})" : "Join (Valid)",
             LobbyCheckStatus.Checking => "Join (Checking)",
@@ -1698,6 +1880,11 @@ public partial class Plugin : BaseUnityPlugin
         if (entry.Status == LobbyCheckStatus.Invalid)
         {
             return _joinButtonInvalidStyle ?? baseStyle;
+        }
+
+        if (entry.Status == LobbyCheckStatus.Timeout)
+        {
+            return _joinButtonTimeoutStyle ?? baseStyle;
         }
 
         if (isFull || entry.Status == LobbyCheckStatus.Full)
@@ -1733,6 +1920,7 @@ public partial class Plugin : BaseUnityPlugin
         {
             LobbyCheckStatus.Unknown => "Not checked",
             LobbyCheckStatus.Checking => "Checking",
+            LobbyCheckStatus.Timeout => "Timeout",
             LobbyCheckStatus.Valid => GetValidationMode() == ValidationMode.FormatOnly ? "Valid (format)" : "Valid",
             LobbyCheckStatus.Full => "Full",
             LobbyCheckStatus.Invalid => "Invalid",
@@ -1808,6 +1996,7 @@ public partial class Plugin : BaseUnityPlugin
             }
 
             entry.IsCheckPending = false;
+            entry.CheckStartedUtc = DateTime.MinValue;
         }
 
         if (callback.m_bSuccess == 0)
@@ -1865,6 +2054,7 @@ public partial class Plugin : BaseUnityPlugin
         while (processed < MaxLobbyChecksPerFrame)
         {
             ulong lobbyId;
+            LobbyEntry? entry;
             lock (_pendingLobbyLock)
             {
                 if (_pendingLobbyChecks.Count == 0)
@@ -1873,6 +2063,16 @@ public partial class Plugin : BaseUnityPlugin
                 }
 
                 lobbyId = _pendingLobbyChecks.Dequeue();
+            }
+
+            lock (_lobbyLock)
+            {
+                if (!_lobbyById.TryGetValue(lobbyId, out entry) || !entry.IsCheckPending)
+                {
+                    continue;
+                }
+
+                entry.CheckStartedUtc = DateTime.UtcNow;
             }
 
             bool requested = false;
@@ -1889,9 +2089,10 @@ public partial class Plugin : BaseUnityPlugin
             {
                 lock (_lobbyLock)
                 {
-                    if (_lobbyById.TryGetValue(lobbyId, out var entry))
+                    if (_lobbyById.TryGetValue(lobbyId, out entry))
                     {
                         entry.IsCheckPending = false;
+                        entry.CheckStartedUtc = DateTime.MinValue;
                         entry.Status = LobbyCheckStatus.SteamUnavailable;
                     }
                 }
@@ -1900,6 +2101,40 @@ public partial class Plugin : BaseUnityPlugin
             }
 
             processed++;
+        }
+    }
+
+    private void UpdateCheckTimeouts()
+    {
+        var now = DateTime.UtcNow;
+        var updated = false;
+
+        lock (_lobbyLock)
+        {
+            foreach (var entry in _lobbyEntries)
+            {
+                if (!entry.IsCheckPending || entry.CheckStartedUtc == DateTime.MinValue)
+                {
+                    continue;
+                }
+
+                if (now - entry.CheckStartedUtc < TimeSpan.FromSeconds(LobbyCheckTimeoutSeconds))
+                {
+                    continue;
+                }
+
+                entry.IsCheckPending = false;
+                entry.CheckStartedUtc = DateTime.MinValue;
+                entry.Status = LobbyCheckStatus.Timeout;
+                entry.MemberCount = -1;
+                entry.MemberLimit = -1;
+                updated = true;
+            }
+        }
+
+        if (updated)
+        {
+            Interlocked.Increment(ref _lobbyVersion);
         }
     }
 
@@ -1937,6 +2172,8 @@ public partial class Plugin : BaseUnityPlugin
                 else
                 {
                     entry.Status = LobbyCheckStatus.Invalid;
+                    entry.IsCheckPending = false;
+                    entry.CheckStartedUtc = DateTime.MinValue;
                 }
             }
 
@@ -1948,6 +2185,8 @@ public partial class Plugin : BaseUnityPlugin
                     entry.Status = LobbyCheckStatus.Invalid;
                     entry.MemberCount = -1;
                     entry.MemberLimit = -1;
+                    entry.IsCheckPending = false;
+                    entry.CheckStartedUtc = DateTime.MinValue;
                 }
                 else
                 {
@@ -1957,12 +2196,16 @@ public partial class Plugin : BaseUnityPlugin
                         entry.Status = LobbyCheckStatus.Unknown;
                         entry.MemberCount = -1;
                         entry.MemberLimit = -1;
+                        entry.IsCheckPending = false;
+                        entry.CheckStartedUtc = DateTime.MinValue;
                     }
                     else if (mode == ValidationMode.FormatOnly)
                     {
                         entry.Status = LobbyCheckStatus.Valid;
                         entry.MemberCount = -1;
                         entry.MemberLimit = -1;
+                        entry.IsCheckPending = false;
+                        entry.CheckStartedUtc = DateTime.MinValue;
                     }
                     else if (_steamValidationEnabled && !entry.IsCheckPending)
                     {
@@ -1975,6 +2218,7 @@ public partial class Plugin : BaseUnityPlugin
                             entry.Status = LobbyCheckStatus.Checking;
                             entry.MemberCount = -1;
                             entry.MemberLimit = -1;
+                            entry.CheckStartedUtc = DateTime.UtcNow;
                             shouldValidate = true;
                             lobbyIdForCheck = entry.LobbyId;
                         }
@@ -1990,6 +2234,8 @@ public partial class Plugin : BaseUnityPlugin
                         entry.Status = LobbyCheckStatus.SteamUnavailable;
                         entry.MemberCount = -1;
                         entry.MemberLimit = -1;
+                        entry.IsCheckPending = false;
+                        entry.CheckStartedUtc = DateTime.MinValue;
                     }
                 }
             }
@@ -2077,6 +2323,7 @@ public partial class Plugin : BaseUnityPlugin
             LobbyCheckStatus.Full => 4,
             LobbyCheckStatus.Checking => 3,
             LobbyCheckStatus.Unknown => 2,
+            LobbyCheckStatus.Timeout => 1,
             LobbyCheckStatus.SteamUnavailable => 1,
             LobbyCheckStatus.Invalid => 0,
             _ => 0
@@ -2263,6 +2510,7 @@ public partial class Plugin : BaseUnityPlugin
     {
         Unknown,
         Checking,
+        Timeout,
         Valid,
         Full,
         Invalid,
@@ -2356,6 +2604,7 @@ public partial class Plugin : BaseUnityPlugin
         public DateTime FirstSeenUtc { get; }
         public DateTime LastSeenUtc { get; private set; }
         public DateTime LastCheckUtc { get; set; } = DateTime.MinValue;
+        public DateTime CheckStartedUtc { get; set; } = DateTime.MinValue;
         public bool IsCheckPending { get; set; }
         public LobbyCheckStatus Status { get; set; }
         public bool AutoJoinAttempted { get; set; }

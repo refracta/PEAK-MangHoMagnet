@@ -38,7 +38,7 @@ public partial class Plugin : BaseUnityPlugin
     private static readonly Regex TagRegex = new Regex(
         @"<.*?>",
         RegexOptions.Compiled | RegexOptions.Singleline);
-    private static readonly string[] ModalBlockedPhrases =
+    private static readonly string[] DefaultModalBlockedPhrases =
     {
         "FAILED TO FIND LOBBY",
         "로비를 찾지 못했습니다",
@@ -97,6 +97,7 @@ public partial class Plugin : BaseUnityPlugin
     private ConfigEntry<string> _validationMode = null!;
     private ConfigEntry<int> _validationIntervalSeconds = null!;
     private ConfigEntry<bool> _suppressLobbyPopups = null!;
+    private ConfigEntry<string> _popupBlockedPhrases = null!;
     private ConfigEntry<int> _expectedAppId = null!;
     private ConfigEntry<string> _userAgent = null!;
     private ConfigEntry<bool> _logFoundLinks = null!;
@@ -830,6 +831,11 @@ public partial class Plugin : BaseUnityPlugin
             "SuppressLobbyPopups",
             true,
             "Auto-dismiss in-game lobby error dialogs while validating Steam lobbies.");
+        _popupBlockedPhrases = Config.Bind(
+            "General",
+            "PopupBlockedPhrases",
+            string.Empty,
+            "Extra phrases to suppress lobby popups (separate with | or ;). Leave empty for defaults.");
         _validationIntervalSeconds = Config.Bind(
             "General",
             "ValidationIntervalSeconds",
@@ -1143,8 +1149,9 @@ public partial class Plugin : BaseUnityPlugin
         _lastModalCheckUtc = now;
 
         var dismissed = false;
-        dismissed |= DismissByTextType("UnityEngine.UI.Text, UnityEngine.UI");
-        dismissed |= DismissByTextType("TMPro.TMP_Text, Unity.TextMeshPro");
+        var phrases = GetPopupBlockedPhrases();
+        dismissed |= DismissByTextType("UnityEngine.UI.Text, UnityEngine.UI", phrases);
+        dismissed |= DismissByTextType("TMPro.TMP_Text, Unity.TextMeshPro", phrases);
 
         if (dismissed)
         {
@@ -1160,7 +1167,7 @@ public partial class Plugin : BaseUnityPlugin
         }
     }
 
-    private static bool DismissByTextType(string typeName)
+    private bool DismissByTextType(string typeName, IReadOnlyList<string> phrases)
     {
         var textType = Type.GetType(typeName);
         if (textType == null)
@@ -1206,7 +1213,7 @@ public partial class Plugin : BaseUnityPlugin
             {
             }
 
-            if (!ContainsBlockedPhrase(textValue))
+            if (!ContainsBlockedPhrase(textValue, phrases))
             {
                 continue;
             }
@@ -1220,14 +1227,14 @@ public partial class Plugin : BaseUnityPlugin
         return dismissed;
     }
 
-    private static bool ContainsBlockedPhrase(string? text)
+    private static bool ContainsBlockedPhrase(string? text, IReadOnlyList<string> phrases)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
             return false;
         }
 
-        foreach (var phrase in ModalBlockedPhrases)
+        foreach (var phrase in phrases)
         {
             if (text.IndexOf(phrase, StringComparison.OrdinalIgnoreCase) >= 0)
             {
@@ -1236,6 +1243,34 @@ public partial class Plugin : BaseUnityPlugin
         }
 
         return false;
+    }
+
+    private IReadOnlyList<string> GetPopupBlockedPhrases()
+    {
+        var raw = _popupBlockedPhrases.Value ?? string.Empty;
+        var phrases = new List<string>();
+        if (!string.IsNullOrWhiteSpace(raw))
+        {
+            var parts = raw.Split(new[] { '|', ';', '\n', '\r', ',' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var part in parts)
+            {
+                var trimmed = part.Trim();
+                if (trimmed.Length > 0)
+                {
+                    phrases.Add(trimmed);
+                }
+            }
+        }
+
+        foreach (var phrase in DefaultModalBlockedPhrases)
+        {
+            if (!phrases.Any(existing => string.Equals(existing, phrase, StringComparison.OrdinalIgnoreCase)))
+            {
+                phrases.Add(phrase);
+            }
+        }
+
+        return phrases;
     }
 
     private static bool DismissModalFromComponent(Component component)

@@ -38,6 +38,15 @@ public partial class Plugin : BaseUnityPlugin
     private static readonly Regex TagRegex = new Regex(
         @"<.*?>",
         RegexOptions.Compiled | RegexOptions.Singleline);
+    private static readonly string[] ModalBlockedPhrases =
+    {
+        "FAILED TO FIND LOBBY",
+        "로비를 찾지 못했습니다",
+        "FAILED TO FIND PHOTON",
+        "FAILED TO FIND PHOTON ROOM",
+        "PHOTON 로비를 찾지 못했습니다"
+    };
+
     private readonly HashSet<string> _seenPostUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, LobbyEntry> _lobbyByLink = new Dictionary<string, LobbyEntry>(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<ulong, LobbyEntry> _lobbyById = new Dictionary<ulong, LobbyEntry>();
@@ -52,6 +61,7 @@ public partial class Plugin : BaseUnityPlugin
     private const int MaxLobbyChecksPerFrame = 2;
     private const float LobbyCheckTimeoutSeconds = 2f;
     private const float LobbyCheckIntervalSeconds = 0.25f;
+    private const float PopupScanIntervalSeconds = 1.0f;
     private const float InGameCheckIntervalSeconds = 1.0f;
     private const float ColIdWidth = 80f;
     private const float ColAuthorWidth = 170f;
@@ -67,6 +77,7 @@ public partial class Plugin : BaseUnityPlugin
     private const float TableRightPadding = 12f;
 
     private HttpClient? _http;
+    private Harmony? _harmony;
     private CancellationTokenSource? _cts;
     private DateTime _lastJoinUtc = DateTime.MinValue;
     private DateTime _lastPollUtc = DateTime.MinValue;
@@ -85,6 +96,7 @@ public partial class Plugin : BaseUnityPlugin
     private ConfigEntry<bool> _validateLobbies = null!;
     private ConfigEntry<string> _validationMode = null!;
     private ConfigEntry<int> _validationIntervalSeconds = null!;
+    private ConfigEntry<bool> _suppressLobbyPopups = null!;
     private ConfigEntry<int> _expectedAppId = null!;
     private ConfigEntry<string> _userAgent = null!;
     private ConfigEntry<bool> _logFoundLinks = null!;
@@ -105,8 +117,10 @@ public partial class Plugin : BaseUnityPlugin
     private Callback<LobbyDataUpdate_t>? _lobbyDataCallback;
     private bool _loggedListEmpty;
     private bool _loggedNoLinks;
+    private DateTime _lastModalCheckUtc = DateTime.MinValue;
     private DateTime _lastInGameCheckUtc = DateTime.MinValue;
     private float _nextLobbyCheckTime;
+    private float _nextPopupScanTime;
     private bool _autoPollingPaused;
     private bool _isInGame;
     private Type? _cachedConnectionServiceType;
@@ -145,6 +159,7 @@ public partial class Plugin : BaseUnityPlugin
         {
         }
         BindConfig();
+        ApplyHarmonyPatches();
         TryInitializeSteamValidation();
 
         _showUi = _showUiOnStart.Value;
@@ -161,6 +176,7 @@ public partial class Plugin : BaseUnityPlugin
     {
         _cts?.Cancel();
         _http?.Dispose();
+        _harmony?.UnpatchSelf();
     }
 
     private void UpdateInGameState()
@@ -351,6 +367,11 @@ public partial class Plugin : BaseUnityPlugin
                 UpdateCheckTimeouts();
             }
 
+            if (now >= _nextPopupScanTime)
+            {
+                _nextPopupScanTime = now + PopupScanIntervalSeconds;
+                TryDismissLobbyPopups();
+            }
         }
     }
 
@@ -804,6 +825,11 @@ public partial class Plugin : BaseUnityPlugin
             "ValidationMode",
             "FormatOnly",
             "Validation mode: None, FormatOnly, Steam. Steam mode can trigger in-game dialogs.");
+        _suppressLobbyPopups = Config.Bind(
+            "General",
+            "SuppressLobbyPopups",
+            true,
+            "Auto-dismiss in-game lobby error dialogs while validating Steam lobbies.");
         _validationIntervalSeconds = Config.Bind(
             "General",
             "ValidationIntervalSeconds",
@@ -957,6 +983,334 @@ public partial class Plugin : BaseUnityPlugin
             _steamValidationEnabled = false;
             Log.LogWarning($"Steam lobby validation disabled: {ex.Message}");
         }
+    }
+
+    private void ApplyHarmonyPatches()
+    {
+        if (_harmony != null)
+        {
+            return;
+        }
+
+        try
+        {
+            _harmony = new Harmony("com.github.manghomagnet");
+            var handlerType = AccessTools.TypeByName("SteamLobbyHandler");
+            if (handlerType == null)
+            {
+                Log.LogWarning("Failed to find SteamLobbyHandler type for popup suppression.");
+                return;
+            }
+
+            var target = AccessTools.Method(handlerType, "OnLobbyDataUpdate");
+            if (target == null)
+            {
+                Log.LogWarning("Failed to find SteamLobbyHandler.OnLobbyDataUpdate for popup suppression.");
+                return;
+            }
+
+            var prefix = new HarmonyMethod(typeof(Plugin), nameof(SteamLobbyHandler_OnLobbyDataUpdate_Prefix));
+            _harmony.Patch(target, prefix: prefix);
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning($"Failed to apply Harmony patches: {ex.Message}");
+        }
+    }
+
+    private static void SteamLobbyHandler_OnLobbyDataUpdate_Prefix(object __instance, ref LobbyDataUpdate_t param)
+    {
+        var plugin = Instance;
+        if (plugin == null)
+        {
+            return;
+        }
+
+        if (!plugin.ShouldSuppressLobbyPopup(__instance, param))
+        {
+            return;
+        }
+
+        param.m_bSuccess = 1;
+    }
+
+    private bool ShouldSuppressLobbyPopup(object handler, LobbyDataUpdate_t param)
+    {
+        if (!_suppressLobbyPopups.Value)
+        {
+            return false;
+        }
+
+        if (!_validateLobbies.Value || GetValidationMode() != ValidationMode.Steam)
+        {
+            return false;
+        }
+
+        if (param.m_bSuccess == 1)
+        {
+            return false;
+        }
+
+        if (handler == null)
+        {
+            return false;
+        }
+
+        var gameRequestActive = TryIsGameLobbyRequestActive(handler, param);
+        return gameRequestActive == false;
+    }
+
+    private static bool? TryIsGameLobbyRequestActive(object handler, LobbyDataUpdate_t param)
+    {
+        try
+        {
+            var field = AccessTools.Field(handler.GetType(), "m_currentlyFetchingGameVersion");
+            if (field == null)
+            {
+                return null;
+            }
+
+            var option = field.GetValue(handler);
+            if (option == null)
+            {
+                return null;
+            }
+
+            var optionType = option.GetType();
+            var isSomeProp = optionType.GetProperty("IsSome", BindingFlags.Public | BindingFlags.Instance);
+            if (isSomeProp == null)
+            {
+                return null;
+            }
+
+            if (isSomeProp.GetValue(option) is not bool isSome)
+            {
+                return null;
+            }
+
+            if (!isSome)
+            {
+                return false;
+            }
+
+            var valueProp = optionType.GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
+            if (valueProp == null)
+            {
+                return true;
+            }
+
+            var value = valueProp.GetValue(option);
+            if (value is CSteamID steamId)
+            {
+                return steamId.m_SteamID == param.m_ulSteamIDLobby;
+            }
+
+            var steamIdField = value?.GetType().GetField("m_SteamID", BindingFlags.Public | BindingFlags.Instance);
+            if (steamIdField != null && value != null)
+            {
+                if (steamIdField.GetValue(value) is ulong id)
+                {
+                    return id == param.m_ulSteamIDLobby;
+                }
+            }
+
+            return true;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void TryDismissLobbyPopups()
+    {
+        if (!_suppressLobbyPopups.Value || !_steamValidationEnabled)
+        {
+            return;
+        }
+
+        if (!HasActiveLobbyChecks())
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        if ((now - _lastModalCheckUtc).TotalSeconds < 0.5)
+        {
+            return;
+        }
+
+        _lastModalCheckUtc = now;
+
+        var dismissed = false;
+        dismissed |= DismissByTextType("UnityEngine.UI.Text, UnityEngine.UI");
+        dismissed |= DismissByTextType("TMPro.TMP_Text, Unity.TextMeshPro");
+
+        if (dismissed)
+        {
+            Log.LogDebug("Suppressed a lobby error modal.");
+        }
+    }
+
+    private bool HasActiveLobbyChecks()
+    {
+        lock (_lobbyLock)
+        {
+            return _lobbyEntries.Any(entry => entry.IsCheckPending);
+        }
+    }
+
+    private static bool DismissByTextType(string typeName)
+    {
+        var textType = Type.GetType(typeName);
+        if (textType == null)
+        {
+            return false;
+        }
+
+        UnityEngine.Object[]? instances;
+        try
+        {
+            instances = Resources.FindObjectsOfTypeAll(textType);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (instances == null || instances.Length == 0)
+        {
+            return false;
+        }
+
+        var textProperty = textType.GetProperty("text", BindingFlags.Public | BindingFlags.Instance);
+        if (textProperty == null)
+        {
+            return false;
+        }
+
+        var dismissed = false;
+        foreach (var instance in instances)
+        {
+            if (instance is not Component component)
+            {
+                continue;
+            }
+
+            string? textValue = null;
+            try
+            {
+                textValue = textProperty.GetValue(instance) as string;
+            }
+            catch
+            {
+            }
+
+            if (!ContainsBlockedPhrase(textValue))
+            {
+                continue;
+            }
+
+            if (DismissModalFromComponent(component))
+            {
+                dismissed = true;
+            }
+        }
+
+        return dismissed;
+    }
+
+    private static bool ContainsBlockedPhrase(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        foreach (var phrase in ModalBlockedPhrases)
+        {
+            if (text.IndexOf(phrase, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool DismissModalFromComponent(Component component)
+    {
+        var current = component.transform;
+        for (var depth = 0; depth < 6 && current != null; depth++)
+        {
+            if (TryClickAnyButton(current))
+            {
+                return true;
+            }
+
+            if (IsLikelyModalName(current.gameObject.name))
+            {
+                current.gameObject.SetActive(false);
+                return true;
+            }
+
+            current = current.parent;
+        }
+
+        return false;
+    }
+
+    private static bool TryClickAnyButton(Transform root)
+    {
+        var buttonType = Type.GetType("UnityEngine.UI.Button, UnityEngine.UI");
+        if (buttonType == null)
+        {
+            return false;
+        }
+
+        Component? button = null;
+        try
+        {
+            button = root.GetComponentInChildren(buttonType, true);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (button == null)
+        {
+            return false;
+        }
+
+        var onClickProp = buttonType.GetProperty("onClick", BindingFlags.Public | BindingFlags.Instance);
+        var onClick = onClickProp?.GetValue(button);
+        var invokeMethod = onClick?.GetType().GetMethod("Invoke", BindingFlags.Public | BindingFlags.Instance);
+        if (invokeMethod == null)
+        {
+            return false;
+        }
+
+        invokeMethod.Invoke(onClick, null);
+        return true;
+    }
+
+    private static bool IsLikelyModalName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return false;
+        }
+
+        return name.IndexOf("modal", StringComparison.OrdinalIgnoreCase) >= 0
+            || name.IndexOf("popup", StringComparison.OrdinalIgnoreCase) >= 0
+            || name.IndexOf("dialog", StringComparison.OrdinalIgnoreCase) >= 0
+            || name.IndexOf("alert", StringComparison.OrdinalIgnoreCase) >= 0
+            || name.IndexOf("notice", StringComparison.OrdinalIgnoreCase) >= 0
+            || name.IndexOf("message", StringComparison.OrdinalIgnoreCase) >= 0
+            || name.IndexOf("알림", StringComparison.OrdinalIgnoreCase) >= 0
+            || name.IndexOf("팝업", StringComparison.OrdinalIgnoreCase) >= 0
+            || name.IndexOf("메시지", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     private static HttpClient CreateHttpClient(string userAgent)

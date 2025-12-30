@@ -38,15 +38,6 @@ public partial class Plugin : BaseUnityPlugin
     private static readonly Regex TagRegex = new Regex(
         @"<.*?>",
         RegexOptions.Compiled | RegexOptions.Singleline);
-    private static readonly string[] DefaultModalBlockedPhrases =
-    {
-        "FAILED TO FIND LOBBY",
-        "로비를 찾지 못했습니다",
-        "FAILED TO FIND PHOTON",
-        "FAILED TO FIND PHOTON ROOM",
-        "PHOTON 로비를 찾지 못했습니다"
-    };
-
     private readonly HashSet<string> _seenPostUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, LobbyEntry> _lobbyByLink = new Dictionary<string, LobbyEntry>(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<ulong, LobbyEntry> _lobbyById = new Dictionary<ulong, LobbyEntry>();
@@ -61,7 +52,6 @@ public partial class Plugin : BaseUnityPlugin
     private const int MaxLobbyChecksPerFrame = 2;
     private const float LobbyCheckTimeoutSeconds = 2f;
     private const float LobbyCheckIntervalSeconds = 0.25f;
-    private const float PopupScanIntervalSeconds = 1.0f;
     private const float InGameCheckIntervalSeconds = 1.0f;
     private const float ColIdWidth = 80f;
     private const float ColAuthorWidth = 170f;
@@ -97,7 +87,6 @@ public partial class Plugin : BaseUnityPlugin
     private ConfigEntry<string> _validationMode = null!;
     private ConfigEntry<int> _validationIntervalSeconds = null!;
     private ConfigEntry<bool> _suppressLobbyPopups = null!;
-    private ConfigEntry<string> _popupBlockedPhrases = null!;
     private ConfigEntry<int> _expectedAppId = null!;
     private ConfigEntry<string> _userAgent = null!;
     private ConfigEntry<bool> _logFoundLinks = null!;
@@ -118,10 +107,8 @@ public partial class Plugin : BaseUnityPlugin
     private Callback<LobbyDataUpdate_t>? _lobbyDataCallback;
     private bool _loggedListEmpty;
     private bool _loggedNoLinks;
-    private DateTime _lastModalCheckUtc = DateTime.MinValue;
     private DateTime _lastInGameCheckUtc = DateTime.MinValue;
     private float _nextLobbyCheckTime;
-    private float _nextPopupScanTime;
     private bool _autoPollingPaused;
     private bool _isInGame;
     private Type? _cachedConnectionServiceType;
@@ -368,11 +355,6 @@ public partial class Plugin : BaseUnityPlugin
                 UpdateCheckTimeouts();
             }
 
-            if (now >= _nextPopupScanTime)
-            {
-                _nextPopupScanTime = now + PopupScanIntervalSeconds;
-                TryDismissLobbyPopups();
-            }
         }
     }
 
@@ -831,11 +813,6 @@ public partial class Plugin : BaseUnityPlugin
             "SuppressLobbyPopups",
             true,
             "Auto-dismiss in-game lobby error dialogs while validating Steam lobbies.");
-        _popupBlockedPhrases = Config.Bind(
-            "General",
-            "PopupBlockedPhrases",
-            string.Empty,
-            "Extra phrases to suppress lobby popups (separate with | or ;). Leave empty for defaults.");
         _validationIntervalSeconds = Config.Bind(
             "General",
             "ValidationIntervalSeconds",
@@ -1126,226 +1103,6 @@ public partial class Plugin : BaseUnityPlugin
         {
             return null;
         }
-    }
-
-    private void TryDismissLobbyPopups()
-    {
-        if (!_suppressLobbyPopups.Value || !_steamValidationEnabled)
-        {
-            return;
-        }
-
-        if (!HasActiveLobbyChecks())
-        {
-            return;
-        }
-
-        var now = DateTime.UtcNow;
-        if ((now - _lastModalCheckUtc).TotalSeconds < 0.5)
-        {
-            return;
-        }
-
-        _lastModalCheckUtc = now;
-
-        var dismissed = false;
-        var phrases = GetPopupBlockedPhrases();
-        dismissed |= DismissByTextType("UnityEngine.UI.Text, UnityEngine.UI", phrases);
-        dismissed |= DismissByTextType("TMPro.TMP_Text, Unity.TextMeshPro", phrases);
-
-        if (dismissed)
-        {
-            Log.LogDebug("Suppressed a lobby error modal.");
-        }
-    }
-
-    private bool HasActiveLobbyChecks()
-    {
-        lock (_lobbyLock)
-        {
-            return _lobbyEntries.Any(entry => entry.IsCheckPending);
-        }
-    }
-
-    private bool DismissByTextType(string typeName, IReadOnlyList<string> phrases)
-    {
-        var textType = Type.GetType(typeName);
-        if (textType == null)
-        {
-            return false;
-        }
-
-        UnityEngine.Object[]? instances;
-        try
-        {
-            instances = Resources.FindObjectsOfTypeAll(textType);
-        }
-        catch
-        {
-            return false;
-        }
-
-        if (instances == null || instances.Length == 0)
-        {
-            return false;
-        }
-
-        var textProperty = textType.GetProperty("text", BindingFlags.Public | BindingFlags.Instance);
-        if (textProperty == null)
-        {
-            return false;
-        }
-
-        var dismissed = false;
-        foreach (var instance in instances)
-        {
-            if (instance is not Component component)
-            {
-                continue;
-            }
-
-            string? textValue = null;
-            try
-            {
-                textValue = textProperty.GetValue(instance) as string;
-            }
-            catch
-            {
-            }
-
-            if (!ContainsBlockedPhrase(textValue, phrases))
-            {
-                continue;
-            }
-
-            if (DismissModalFromComponent(component))
-            {
-                dismissed = true;
-            }
-        }
-
-        return dismissed;
-    }
-
-    private static bool ContainsBlockedPhrase(string? text, IReadOnlyList<string> phrases)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return false;
-        }
-
-        foreach (var phrase in phrases)
-        {
-            if (text.IndexOf(phrase, StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private IReadOnlyList<string> GetPopupBlockedPhrases()
-    {
-        var raw = _popupBlockedPhrases.Value ?? string.Empty;
-        var phrases = new List<string>();
-        if (!string.IsNullOrWhiteSpace(raw))
-        {
-            var parts = raw.Split(new[] { '|', ';', '\n', '\r', ',' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var part in parts)
-            {
-                var trimmed = part.Trim();
-                if (trimmed.Length > 0)
-                {
-                    phrases.Add(trimmed);
-                }
-            }
-        }
-
-        foreach (var phrase in DefaultModalBlockedPhrases)
-        {
-            if (!phrases.Any(existing => string.Equals(existing, phrase, StringComparison.OrdinalIgnoreCase)))
-            {
-                phrases.Add(phrase);
-            }
-        }
-
-        return phrases;
-    }
-
-    private static bool DismissModalFromComponent(Component component)
-    {
-        var current = component.transform;
-        for (var depth = 0; depth < 6 && current != null; depth++)
-        {
-            if (TryClickAnyButton(current))
-            {
-                return true;
-            }
-
-            if (IsLikelyModalName(current.gameObject.name))
-            {
-                current.gameObject.SetActive(false);
-                return true;
-            }
-
-            current = current.parent;
-        }
-
-        return false;
-    }
-
-    private static bool TryClickAnyButton(Transform root)
-    {
-        var buttonType = Type.GetType("UnityEngine.UI.Button, UnityEngine.UI");
-        if (buttonType == null)
-        {
-            return false;
-        }
-
-        Component? button = null;
-        try
-        {
-            button = root.GetComponentInChildren(buttonType, true);
-        }
-        catch
-        {
-            return false;
-        }
-
-        if (button == null)
-        {
-            return false;
-        }
-
-        var onClickProp = buttonType.GetProperty("onClick", BindingFlags.Public | BindingFlags.Instance);
-        var onClick = onClickProp?.GetValue(button);
-        var invokeMethod = onClick?.GetType().GetMethod("Invoke", BindingFlags.Public | BindingFlags.Instance);
-        if (invokeMethod == null)
-        {
-            return false;
-        }
-
-        invokeMethod.Invoke(onClick, null);
-        return true;
-    }
-
-    private static bool IsLikelyModalName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return false;
-        }
-
-        return name.IndexOf("modal", StringComparison.OrdinalIgnoreCase) >= 0
-            || name.IndexOf("popup", StringComparison.OrdinalIgnoreCase) >= 0
-            || name.IndexOf("dialog", StringComparison.OrdinalIgnoreCase) >= 0
-            || name.IndexOf("alert", StringComparison.OrdinalIgnoreCase) >= 0
-            || name.IndexOf("notice", StringComparison.OrdinalIgnoreCase) >= 0
-            || name.IndexOf("message", StringComparison.OrdinalIgnoreCase) >= 0
-            || name.IndexOf("알림", StringComparison.OrdinalIgnoreCase) >= 0
-            || name.IndexOf("팝업", StringComparison.OrdinalIgnoreCase) >= 0
-            || name.IndexOf("메시지", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     private static HttpClient CreateHttpClient(string userAgent)
